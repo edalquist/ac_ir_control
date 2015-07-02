@@ -26,7 +26,7 @@ Signal Out   ->  Digital Pin 2
 (If using a 3V Arduino, you may connect V+ to +3V)
 */
 
-#define LEDPIN 13
+#define LEDPIN D0
 //you may increase this value on Arduinos with greater than 2k SRAM
 #define maxLen 800
 
@@ -35,7 +35,9 @@ volatile unsigned int x = 0; //Pointer thru irBuffer - volatile because changed 
 
 void setup() {
   Serial.begin(115200); //change BAUD rate as required
-  attachInterrupt(0, rxIR_Interrupt_Handler, CHANGE);//set up ISR for receiving IR signal
+  pinMode(D0, OUTPUT);
+  pinMode(D2, INPUT);
+  attachInterrupt(D2, rxIR_Interrupt_Handler, CHANGE);//set up ISR for receiving IR signal
 }
 
 void loop() {
@@ -46,20 +48,21 @@ void loop() {
   if (x) { //if a signal is captured
     digitalWrite(LEDPIN, HIGH);//visual indicator that signal received
     Serial.println();
-    Serial.print(F("Raw: (")); //dump raw header format - for library
-    Serial.print((x - 1));
-    Serial.print(F(") "));
-    detachInterrupt(0);//stop interrupts & capture until finshed here
+    /*Serial.print(F("[")); //dump raw header format - for library*/
+    /*Serial.print((x - 1));
+    Serial.println(F(", "));*/
+    detachInterrupt(D2);//stop interrupts & capture until finshed here
     for (int i = 1; i < x; i++) { //now dump the times
-      if (!(i & 0x1)) Serial.print(F("-"));
+      /*if (!(i & 0x1)) Serial.print(F("-"));*/
       Serial.print(irBuffer[i] - irBuffer[i - 1]);
-      Serial.print(F(", "));
+      if (i + 1 < x) Serial.print(F("\t"));
     }
     x = 0;
+    /*Serial.println(F("]"));*/
     Serial.println();
     Serial.println();
     digitalWrite(LEDPIN, LOW);//end of visual indicator, for this time
-    attachInterrupt(0, rxIR_Interrupt_Handler, CHANGE);//re-enable ISR for receiving IR signal
+    attachInterrupt(D2, rxIR_Interrupt_Handler, CHANGE);//re-enable ISR for receiving IR signal
   }
 
 }
