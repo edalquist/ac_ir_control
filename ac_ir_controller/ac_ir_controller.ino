@@ -26,9 +26,12 @@ Revision: 1.0
 #define txPinIR   D6   //IR carrier output pin
 
 #define LED D7
+#define LEDOPT A0
 
 unsigned long sigTime = 0; //use in mark & space functions to keep track of time
 unsigned int lastCode = 0;
+
+int analogvalue; // Here we are declaring the integer variable analogvalue, which we will use later to store the value of the photoresistor.
 
 unsigned int decodeNECHex(String codeHex) {
   unsigned int h;
@@ -78,31 +81,40 @@ int sendLast(String command) {
   return sendNECCode(lastCode);
 }
 
+int ledToggle(String command) {
+  if (command == "on") {
+    digitalWrite(LED, HIGH);
+  } else {
+    digitalWrite(LED, LOW);
+  }
+  return 1;
+}
+
 void setup() {
   Serial.begin(57600);
+
   pinMode(txPinIR, OUTPUT);
   pinMode(LED, OUTPUT);
 
+  pinMode(LEDOPT, INPUT); // Reads the opto-isolator output
+
+  Spark.variable("analogvalue", &analogvalue, INT);
   Spark.function("sendNEC", sendNEC);
   Spark.function("sendLast", sendLast);
+  Spark.function("ledToggle", ledToggle);
 }
 
 void loop() {
-  Serial.print("Last Code: ");
-  Serial.println(lastCode, HEX);
-  delay(5000);
+  analogvalue = analogRead(LEDOPT);
+  Serial.println(analogvalue);
+  delay(50);
 }
 
 void mark(unsigned int mLen) { //uses sigTime as end parameter
-  /*Serial.print(" m");
-  Serial.print(mLen);*/
-
   sigTime+= mLen; //mark ends at new sigTime
   unsigned long now = micros();
-  if (now >= sigTime) {
-    Serial.println("Skipping mark");
-    return;
-  }
+  if (now >= sigTime) return;
+
   unsigned long dur = sigTime - now; //allows for rolling time adjustment due to code execution delays
   while ((micros() - now) < dur) { //just wait here until time is up
     digitalWrite(txPinIR, HIGH);
@@ -113,15 +125,10 @@ void mark(unsigned int mLen) { //uses sigTime as end parameter
 }
 
 void space(unsigned int sLen) { //uses sigTime as end parameter
-  /*Serial.print(" s");
-  Serial.print(sLen);*/
-
   sigTime+= sLen; //space ends at new sigTime
   unsigned long now = micros();
-  if (now >= sigTime) {
-    Serial.println("Skipping space");
-    return;
-  }
+  if (now >= sigTime) return;
+
   unsigned long dur = sigTime - now; //allows for rolling time adjustment due to code execution delays
   while ((micros() - now) < dur) ; //just wait here until time is up
 }
