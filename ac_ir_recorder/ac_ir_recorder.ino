@@ -36,10 +36,6 @@ Signal Out   ->  Digital Pin 2
 #define NEC_RPT_SPACE	2250
 #define MARK_EXCESS 100
 
-#define TOLERANCE 25  // percent tolerance in measurements
-#define LTOL (1.0 - TOLERANCE/100.)
-#define UTOL (1.0 + TOLERANCE/100.)
-
 #define LEDPIN A0
 #define IRPIN D0
 //you may increase this value on Arduinos with greater than 2k SRAM
