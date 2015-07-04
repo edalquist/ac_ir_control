@@ -89,9 +89,11 @@ long decodeNEC(int *irData) {
     }
     offset++;
     if (MATCH_SPACE(irData[offset], NEC_ONE_SPACE)) {
+      Serial.print("1");
       data = (data << 1) | 1;
     }
     else if (MATCH_SPACE(irData[offset], NEC_ZERO_SPACE)) {
+      Serial.print("0");
       data <<= 1;
     }
     else {
@@ -135,8 +137,11 @@ void loop() {
 
     Serial.println();
     long necCode = decodeNEC(irData);
+    Serial.println();
     Serial.print(F("NEC: "));
     Serial.println(necCode, HEX);
+    Serial.print(F("NEC: "));
+    Serial.println(necCode, BIN);
 
     x = 0;
     Serial.println();

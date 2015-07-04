@@ -46,7 +46,7 @@ int sendNEC(String command) {
   sigTime = micros(); //keeps rolling track of signal time to avoid impact of loop & code execution delays
   mark(NEC_HDR_MARK);
   space(NEC_HDR_SPACE);
-  for (int i = 0; i < NEC_BITS; i++) {
+  for (int i = NEC_BITS - 1; i >= 0; i--) {
     mark(NEC_BIT_MARK);
     if (codeBin & (1<<i)) {
       space(NEC_ONE_SPACE);
@@ -74,8 +74,8 @@ void loop() {
 }
 
 void mark(unsigned int mLen) { //uses sigTime as end parameter
-  Serial.print(" m");
-  Serial.print(mLen);
+  /*Serial.print(" m");
+  Serial.print(mLen);*/
 
   sigTime+= mLen; //mark ends at new sigTime
   unsigned long now = micros();
@@ -93,8 +93,8 @@ void mark(unsigned int mLen) { //uses sigTime as end parameter
 }
 
 void space(unsigned int sLen) { //uses sigTime as end parameter
-  Serial.print(" s");
-  Serial.print(sLen);
+  /*Serial.print(" s");
+  Serial.print(sLen);*/
 
   sigTime+= sLen; //space ends at new sigTime
   unsigned long now = micros();
