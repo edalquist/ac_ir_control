@@ -78,22 +78,12 @@ int sendLast(String command) {
   return sendNECCode(lastCode);
 }
 
-int incrCode(String command) {
-  Serial.print("Incrementing code from ");
-  Serial.print(lastCode, HEX);
-  lastCode++;
-  Serial.print(" to ");
-  Serial.println(lastCode, HEX);
-  return 1;
-}
-
 void setup() {
   Serial.begin(57600);
   pinMode(txPinIR, OUTPUT);
   pinMode(LED, OUTPUT);
 
   Spark.function("sendNEC", sendNEC);
-  Spark.function("incrCode", incrCode);
   Spark.function("sendLast", sendLast);
 }
 
