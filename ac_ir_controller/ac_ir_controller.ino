@@ -28,6 +28,7 @@ Revision: 1.0
 #define LED D7
 
 unsigned long sigTime = 0; //use in mark & space functions to keep track of time
+unsigned int lastCode = 0;
 
 unsigned int decodeNECHex(String codeHex) {
   unsigned int h;
@@ -37,16 +38,12 @@ unsigned int decodeNECHex(String codeHex) {
   return h;
 }
 
-int sendNEC(String command) {
+int sendNECCode(unsigned int codeBin) {
   Serial.print("Sending: ");
-  Serial.print(command);
-  if (command.length() != 8) {
-    Serial.println("ERR: Command must be 8 characters (32 bit hex string)");
-    return -1;
-  }
+  Serial.print(codeBin, HEX);
 
-  unsigned int codeBin = decodeNECHex(command);
   digitalWrite(LED, HIGH);
+  lastCode = codeBin;
 
   sigTime = micros(); //keeps rolling track of signal time to avoid impact of loop & code execution delays
   mark(NEC_HDR_MARK);
@@ -67,15 +64,43 @@ int sendNEC(String command) {
   return 1;
 }
 
+int sendNEC(String command) {
+  if (command.length() != 8) {
+    Serial.println("ERR: Command must be 8 characters (32 bit hex string)");
+    return -1;
+  }
+
+  unsigned int codeBin = decodeNECHex(command);
+  return sendNECCode(codeBin);
+}
+
+int sendLast(String command) {
+  return sendNECCode(lastCode);
+}
+
+int incrCode(String command) {
+  Serial.print("Incrementing code from ");
+  Serial.print(lastCode, HEX);
+  lastCode++;
+  Serial.print(" to ");
+  Serial.println(lastCode, HEX);
+  return 1;
+}
+
 void setup() {
   Serial.begin(57600);
   pinMode(txPinIR, OUTPUT);
   pinMode(LED, OUTPUT);
 
   Spark.function("sendNEC", sendNEC);
+  Spark.function("incrCode", incrCode);
+  Spark.function("sendLast", sendLast);
 }
 
 void loop() {
+  Serial.print("Last Code: ");
+  Serial.println(lastCode, HEX);
+  delay(5000);
 }
 
 void mark(unsigned int mLen) { //uses sigTime as end parameter
