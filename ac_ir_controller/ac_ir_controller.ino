@@ -1,3 +1,8 @@
+/*
+Author: AnalysIR
+Revision: 1.0
+*/
+
 // From https://github.com/shirriff/Arduino-IRremote/blob/master/IRremoteInt.h
 #define NEC_BITS 32
 #define NEC_HDR_MARK	9000
