@@ -25,13 +25,14 @@ Revision: 1.0
 #define LOWTIME   PERIOD - HIGHTIME
 #define txPinIR   D6   //IR carrier output pin
 
-#define LED D7
-#define LEDOPT A0
+#define LEDP A1
+#define LEDN A0
 
 unsigned long sigTime = 0; //use in mark & space functions to keep track of time
 unsigned int lastCode = 0;
 
-int analogvalue; // Here we are declaring the integer variable analogvalue, which we will use later to store the value of the photoresistor.
+int ledP;
+int ledN;
 
 unsigned int decodeNECHex(String codeHex) {
   unsigned int h;
@@ -45,7 +46,6 @@ int sendNECCode(unsigned int codeBin) {
   Serial.print("Sending: ");
   Serial.print(codeBin, HEX);
 
-  digitalWrite(LED, HIGH);
   lastCode = codeBin;
 
   sigTime = micros(); //keeps rolling track of signal time to avoid impact of loop & code execution delays
@@ -60,8 +60,6 @@ int sendNECCode(unsigned int codeBin) {
     }
   }
   mark(NEC_BIT_MARK);
-
-  digitalWrite(LED, LOW);
 
   Serial.println(" Sent!");
   return 1;
@@ -81,33 +79,24 @@ int sendLast(String command) {
   return sendNECCode(lastCode);
 }
 
-int ledToggle(String command) {
-  if (command == "on") {
-    digitalWrite(LED, HIGH);
-  } else {
-    digitalWrite(LED, LOW);
-  }
-  return 1;
-}
-
 void setup() {
   Serial.begin(57600);
 
   pinMode(txPinIR, OUTPUT);
-  pinMode(LED, OUTPUT);
 
-  pinMode(LEDOPT, INPUT); // Reads the opto-isolator output
+  pinMode(LEDP, INPUT);
+  pinMode(LEDN, INPUT);
 
-  Spark.variable("analogvalue", &analogvalue, INT);
+  Spark.variable("ledP", &ledP, INT);
+  Spark.variable("ledN", &ledN, INT);
   Spark.function("sendNEC", sendNEC);
   Spark.function("sendLast", sendLast);
-  Spark.function("ledToggle", ledToggle);
 }
 
 void loop() {
-  analogvalue = analogRead(LEDOPT);
-  Serial.println(analogvalue);
-  delay(50);
+  ledP = analogRead(LEDP);
+  ledN = analogRead(LEDN);
+  delay(1000);
 }
 
 void mark(unsigned int mLen) { //uses sigTime as end parameter
