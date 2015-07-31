@@ -6,24 +6,48 @@
  * https://community.particle.io/t/reading-digits-from-dual-7-segment-10-pin-display/12989
  */
 
+#include "types.h"
+
 #define CLOCK_PIN D2
 #define INPUT_PIN D1
 
-// The shift register sees 6 bytes repeatedly
-// Keep the last 4 status codes
-#define BUFFER_LEN 6 * 4
+// The shift register sees 5 or 6 bytes repeatedly, 30 is a reasonable common multiplier
+#define BUFFER_LEN 6 * 5
 #define UPDATE_TIME_MAX 500 // max time in micros the AC controller spends pushing data into the register
 
+#define STATES_LEN 5
+
+// Variables used by the ISR to track the shift register
 unsigned int cycleStart = 0;
 volatile uint8_t byteBuffer[BUFFER_LEN];
 volatile uint8_t* currentByte = byteBuffer;
 
-long lastUpdate = 0;
-long lastMessage = 0;
-double tempDisplay = 0;
-char fanSpeed[2];
-char acMode[2];
-char acData[(BUFFER_LEN * 3) + 1];
+
+// Overall state tracking
+AcModels acModel = V1_2;
+long lastUpdate = 0; // millis of successful data parse
+long lastMessage = 0; // millis of of last message sent
+int acStatesIndex = 0;
+struct AcState acStates[STATES_LEN];
+
+
+// Spark variables
+int temp = 0;
+double timer = 0;
+char speed[2];
+char mode[2];
+char registerData[(BUFFER_LEN * 3) + 1];
+
+int setAcModel(String acModelName) {
+  if (acModelName == "V1_2") {
+    acModel = V1_2;
+    return 12;
+  } else {
+    // Default to V1_4
+    acModel = V1_4;
+    return 14;
+  }
+}
 
 void setup() {
   Serial.begin(115200); //change BAUD rate as required
@@ -32,12 +56,17 @@ void setup() {
   pinMode(INPUT_PIN, INPUT);
 
   // Register display status variables
-  Spark.variable("temp", &tempDisplay, DOUBLE);
-  Spark.variable("fan", &fanSpeed, STRING);
-  Spark.variable("mode", &acMode, STRING);
-  Spark.variable("data", &acData, STRING);
+  Spark.variable("temp", &temp, INT);
+  Spark.variable("timer", &timer, DOUBLE);
+  Spark.variable("speed", &speed, STRING);
+  Spark.variable("mode", &mode, STRING);
+  Spark.variable("data", &registerData, STRING);
 
-  attachInterrupt(CLOCK_PIN, clock_Interrupt_Handler, RISING); //set up ISR for receiving shift register clock signal
+  // Register control functions
+  Spark.function("setAcModel", setAcModel);
+
+  // Setup interrupt handler on rising edge of the register clock
+  attachInterrupt(CLOCK_PIN, clock_Interrupt_Handler, RISING);
 }
 
 /**
@@ -79,18 +108,7 @@ int decodeDigit(uint8_t digitBits) {
 
 double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits) {
   int tens = decodeDigit(tensBits);
-  //Serial.print("Decoded: ");
-  //Serial.print(tensBits, HEX);
-  //Serial.print(" to ");
-  //Serial.print(tens);
-  //Serial.println();
-
   int ones = decodeDigit(onesBits);
-  //Serial.print("Decoded: ");
-  //Serial.print(onesBits, HEX);
-  //Serial.print(" to ");
-  //Serial.print(ones);
-  //Serial.println();
 
   // One of the digits must be invalid, return -1
   if (tens == -1 || ones == -1) {
@@ -106,58 +124,58 @@ double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits) {
   }
 }
 
-String decodeFanSpeed(uint8_t modeFanBits) {
-  Serial.print("dc_fs: ");
-  Serial.print(modeFanBits, HEX);
+FanSpeeds decodeFanSpeed(uint8_t modeFanBits) {
+  // Fan bits are 0-3
+  uint8_t fanBitsMasked = modeFanBits & 0b00001111;
 
-  uint8_t fanBitsMasked = modeFanBits & 0x0F;
-  Serial.print(", mb: ");
-  Serial.print(fanBitsMasked, HEX);
-
-  switch (fanBitsMasked) {
-    case 0x07:
-      Serial.println(" L");
-      return "L";
-    case 0x0B:
-      Serial.println(" H");
-      return "H";
-    case 0x0D:
-      Serial.println(" A");
-      return "A";
-    default:
-      Serial.println(" DEFAULT");
-      return "";
+  if (acModel == V1_2) {
+    switch (fanBitsMasked) {
+      case 0x07:
+        return FAN_LOW;
+      case 0x0B:
+        return FAN_MEDIUM;
+      case 0x0D:
+        return FAN_HIGH;
+      case 0x0E:
+        return FAN_AUTO;
+      default:
+        return FAN_INVALID;
+    }
+  } else { // V1_4
+    switch (fanBitsMasked) {
+      case 0x07:
+        return FAN_LOW;
+      case 0x0B:
+        return FAN_HIGH;
+      case 0x0D:
+        return FAN_AUTO;
+      default:
+        return FAN_INVALID;
+    }
   }
 }
 
-String decodeAcMode(uint8_t modeFanBits) {
-  Serial.print("dc_am: ");
-  Serial.print(modeFanBits, HEX);
+AcModes decodeAcMode(uint8_t modeFanBits) {
+  uint8_t modeBitsMasked = modeFanBits & 0b01110000;
 
-  uint8_t modeBitsMasked = modeFanBits & 0xF0;
-  Serial.print(", mb: ");
-  Serial.print(modeBitsMasked, HEX);
-
+  // Logic is the same for V1_2 & V1_4
   switch (modeBitsMasked) {
-    case 0xB0:
-      Serial.println(" L");
-      return "F";
-    case 0xD0:
-      Serial.println(" E");
-      return "E";
-    case 0xE0:
-      Serial.println(" C");
-      return "C";
+    case 0x60: // 0110 0000
+      return MODE_COOL;
+    case 0x50: // 0101 0000
+      return MODE_ECO;
+    case 0x30: // 0011 0000
+      return MODE_FAN;
     default:
-      Serial.println(" DEFAULT");
-      return "";
+      return MODE_INVALID;
   }
 }
+
 
 void updateState(double temp, String fan, String mode) {
   Serial.println("Updating State");
 
-  String fanSpeedStr(fanSpeed);
+  /*String fanSpeedStr(fanSpeed);
   String acModeStr(acMode);
 
   // Record if any of the data changed, used to decide if an event should be published
@@ -177,7 +195,7 @@ void updateState(double temp, String fan, String mode) {
     Serial.println(message);
     Spark.publish("STATE_CHANGED", message);
     lastMessage = lastUpdate;
-  }
+  }*/
 }
 
 void loop() {
@@ -186,11 +204,12 @@ void loop() {
   // Copy the volatile byteBuffer to a local buffer to minimize the time that interrupts are off
   noInterrupts();
   memcpy(readBuffer, (const uint8_t*) byteBuffer, BUFFER_LEN);
-  // TODO zero out the byte that currentByte points to?
+  // TODO use volatile uint8_t* currentByte = byteBuffer; to copy byteBuffer and fix ordering
   interrupts();
 
 
-  // Debugging that dumps the whole buffer out via an event
+  // Dump the readBuffer to a char[] each loop
+  /*
   String state;
   state.reserve(BUFFER_LEN * 3);
   for (int i = 0; i < BUFFER_LEN; i++) {
@@ -199,44 +218,51 @@ void loop() {
     state += byteHex;
     state += " ";
   }
-  state.toCharArray(acData, (BUFFER_LEN * 3) + 1);
-  /*Spark.publish("BUFFER_READ", state);*/
+  state.toCharArray(registerData, (BUFFER_LEN * 3) + 1);
+  */
+  for (int i = 0; i < BUFFER_LEN; i++) {
+    sprintf(&registerData[i * 3], "%02x ", readBuffer[i]);
+  }
 
-  // Dump the input data
-  for (int i = 0; i < BUFFER_LEN - 6; i++) {
-    // Look for the header bytes
-    if (readBuffer[i] == 0x7F && readBuffer[i+1] == 0x7F) {
-      if (readBuffer[i+2] == 0xFF && readBuffer[i+3] == 0xFF && readBuffer[i+4] == 0xFF && readBuffer[i+5] == 0xFF) {
-        // If the next 4 bytes are FF the unit is off
-        updateState(0, "X", "X");
-        break; // Read a successfull data frame, stop looping
-      } else if (readBuffer[i+5] == 0xFD) {
-        // If the last byte is FD we should have a 6 byte status
-        double td = decodeDisplayNumber(readBuffer[i+2], readBuffer[i+3]);
-        Serial.println(td);
-        if (td == -1) {
-          // If decoded number is -1 then the data must be bad, give up and let the loop keep iterating
-          continue;
+  if (acModel == V1_2) {
+
+  } else {
+    /*// Dump the input data
+    for (int i = 0; i < BUFFER_LEN - 6; i++) {
+      // Look for the header bytes
+      if (readBuffer[i] == 0x7F && readBuffer[i+1] == 0x7F) {
+        if (readBuffer[i+2] == 0xFF && readBuffer[i+3] == 0xFF && readBuffer[i+4] == 0xFF && readBuffer[i+5] == 0xFF) {
+          // If the next 4 bytes are FF the unit is off
+          updateState(0, "X", "X");
+          break; // Read a successfull data frame, stop looping
+        } else if (readBuffer[i+5] == 0xFD) {
+          // If the last byte is FD we should have a 6 byte status
+          double td = decodeDisplayNumber(readBuffer[i+2], readBuffer[i+3]);
+          Serial.println(td);
+          if (td == -1) {
+            // If decoded number is -1 then the data must be bad, give up and let the loop keep iterating
+            continue;
+          }
+
+          String fs = decodeFanSpeed(readBuffer[i+4]);
+          Serial.println(fs);
+          if (fs == "") {
+            // If decoded String is "" then the data must be bad, give up and let the loop keep iterating
+            continue;
+          }
+
+          String am = decodeAcMode(readBuffer[i+4]);
+          Serial.println(am);
+          if (am == "") {
+            // If decoded String is "" then the data must be bad, give up and let the loop keep iterating
+            continue;
+          }
+
+          updateState(td, fs, am);
+          break; // Read a successfull data frame, stop looping
         }
-
-        String fs = decodeFanSpeed(readBuffer[i+4]);
-        Serial.println(fs);
-        if (fs == "") {
-          // If decoded String is "" then the data must be bad, give up and let the loop keep iterating
-          continue;
-        }
-
-        String am = decodeAcMode(readBuffer[i+4]);
-        Serial.println(am);
-        if (am == "") {
-          // If decoded String is "" then the data must be bad, give up and let the loop keep iterating
-          continue;
-        }
-
-        updateState(td, fs, am);
-        break; // Read a successfull data frame, stop looping
       }
-    }
+    }*/
   }
 
   // If no update for 2 minutes complain
