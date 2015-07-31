@@ -15,7 +15,7 @@
 #define BUFFER_LEN 6 * 5
 #define UPDATE_TIME_MAX 500 // max time in micros the AC controller spends pushing data into the register
 
-#define STATES_LEN 5
+#define AC_STATES_LEN 5
 
 // Variables used by the ISR to track the shift register
 unsigned int cycleStart = 0;
@@ -27,8 +27,14 @@ volatile uint8_t* currentByte = byteBuffer;
 AcModels acModel = V1_2;
 long lastUpdate = 0; // millis of successful data parse
 long lastMessage = 0; // millis of of last message sent
-int acStatesIndex = 0;
-struct AcState acStates[STATES_LEN];
+int acStatesIndex = 0; // Circular buffer index into acStates array
+struct AcState acStates[AC_STATES_LEN] = {
+  {0, 0.0, FAN_OFF, MODE_OFF},
+  {0, 0.0, FAN_OFF, MODE_OFF},
+  {0, 0.0, FAN_OFF, MODE_OFF},
+  {0, 0.0, FAN_OFF, MODE_OFF},
+  {0, 0.0, FAN_OFF, MODE_OFF}
+};
 
 
 // Spark variables
@@ -38,6 +44,12 @@ char speed[2];
 char mode[2];
 char registerData[(BUFFER_LEN * 3) + 1];
 
+/**
+ * Spark Function letting me switch AC Models while running
+ * maybe read/write this in EEPROM
+ *
+ * http://docs.particle.io/core/firmware/#other-functions-eeprom
+ */
 int setAcModel(String acModelName) {
   if (acModelName == "V1_2") {
     acModel = V1_2;
@@ -124,6 +136,7 @@ double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits) {
   }
 }
 
+FanSpeeds decodeFanSpeed(uint8_t modeFanBits);
 FanSpeeds decodeFanSpeed(uint8_t modeFanBits) {
   // Fan bits are 0-3
   uint8_t fanBitsMasked = modeFanBits & 0b00001111;
@@ -155,7 +168,9 @@ FanSpeeds decodeFanSpeed(uint8_t modeFanBits) {
   }
 }
 
+AcModes decodeAcMode(uint8_t modeFanBits);
 AcModes decodeAcMode(uint8_t modeFanBits) {
+  // Mode bits are 4-6
   uint8_t modeBitsMasked = modeFanBits & 0b01110000;
 
   // Logic is the same for V1_2 & V1_4
@@ -168,6 +183,14 @@ AcModes decodeAcMode(uint8_t modeFanBits) {
       return MODE_FAN;
     default:
       return MODE_INVALID;
+  }
+}
+
+int getStatusLength() {
+  if (acModel == V1_2) {
+    return 5;
+  } else { // V1_4
+    return 6;
   }
 }
 
@@ -198,6 +221,39 @@ void updateState(double temp, String fan, String mode) {
   }*/
 }
 
+void parseDataV14(uint8_t parseBuffer[], int pbLen) {
+}
+
+void parseDataV12(uint8_t parseBuffer[], int pbLen) {
+  if (pbLen != getStatusLength()) {
+    // Something is wrong, skip parsing
+    return;
+  }
+
+  // If all 5 bytes are 0xFF the unit is off
+  bool isOff = true;
+  for (int i = 0; i < pbLen && isOff; i++) {
+    isOff = parseBuffer[i] == 0xFF;
+  }
+  if (isOff) {
+    acStates[acStatesIndex].temp = 0;
+    acStates[acStatesIndex].timer = 0;
+    acStates[acStatesIndex].speed = FAN_OFF;
+    acStates[acStatesIndex].mode = MODE_OFF;
+    acStatesIndex = ++acStatesIndex % AC_STATES_LEN;
+
+    return;
+  }
+}
+
+void parseData(uint8_t parseBuffer[], int pbLen) {
+  if (acModel == V1_2) {
+    parseDataV12(parseBuffer, pbLen);
+  } else {
+
+  }
+}
+
 void loop() {
   uint8_t readBuffer[BUFFER_LEN];
 
@@ -208,24 +264,24 @@ void loop() {
   interrupts();
 
 
-  // Dump the readBuffer to a char[] each loop
-  /*
-  String state;
-  state.reserve(BUFFER_LEN * 3);
-  for (int i = 0; i < BUFFER_LEN; i++) {
-    String byteHex(readBuffer[i], HEX);
-    byteHex.toUpperCase();
-    state += byteHex;
-    state += " ";
-  }
-  state.toCharArray(registerData, (BUFFER_LEN * 3) + 1);
-  */
+  // Dump the readBuffer to a the data variable each loop to make debugging easier
   for (int i = 0; i < BUFFER_LEN; i++) {
     sprintf(&registerData[i * 3], "%02x ", readBuffer[i]);
   }
 
-  if (acModel == V1_2) {
+  // Chunk the read buffer out into parse buffers and attempt to parse each one
+  int pbLen = getStatusLength();
+  uint8_t parseBuffer[pbLen];
+  for (int rb = 0; rb < BUFFER_LEN; rb++) {
+    for (int pb = 0; pb < pbLen; pb++) {
+      parseBuffer[pb] = readBuffer[(rb + pb) % BUFFER_LEN];
+    }
+    parseData(parseBuffer, pbLen);
+  }
 
+  if (acModel == V1_2) {
+    // V1.2 uses a 5 byte cycle
+    // TODO decode v1.2 display data
   } else {
     /*// Dump the input data
     for (int i = 0; i < BUFFER_LEN - 6; i++) {

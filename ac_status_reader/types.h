@@ -6,6 +6,7 @@ enum AcModels {
 
 // Data structures to track AC state
 enum FanSpeeds {
+  FAN_OFF,
   FAN_LOW,
   FAN_MEDIUM,
   FAN_HIGH,
@@ -14,6 +15,7 @@ enum FanSpeeds {
 };
 
 enum AcModes {
+  MODE_OFF,
   MODE_FAN,
   MODE_ECO,
   MODE_COOL,
@@ -23,11 +25,6 @@ enum AcModes {
 struct AcState {
   int temp;
   double timer;
-  FanSpeeds speed;
-  AcModes mode;
+  enum FanSpeeds speed;
+  enum AcModes mode;
 };
-
-
-FanSpeeds decodeFanSpeed(uint8_t modeFanBits);
-
-AcModes decodeAcMode(uint8_t modeFanBits);
