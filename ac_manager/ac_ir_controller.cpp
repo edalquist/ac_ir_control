@@ -1,5 +1,6 @@
 #include "application.h"
 #include "ac_ir_controller.h"
+#include "ac_ir_controller_p.h"
 
 unsigned long sigTime = 0; //use in mark & space functions to keep track of time
 int txPinIR;
