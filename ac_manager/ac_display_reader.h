@@ -1,6 +1,14 @@
 #ifndef AC_DISPLAY_READER_H
 #define AC_DISPLAY_READER_H
 
+// The shift register sees 5 or 6 bytes repeatedly, 30 is a reasonable common multiplier
+#define BUFFER_LEN 30
+#define UPDATE_TIME_MAX 500 // max time in micros the AC controller spends pushing data into the register
+
+#define AC_STATES_LEN 5
+#define AC_STABLE_STATES 2
+
+
 /**
  * The different Frigidaire AC models supported
  */
@@ -43,5 +51,10 @@ struct AcState {
   enum AcModes mode;
   bool sleep;
 };
+
+static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}";
+
+void initAcDisplayReader(int cp, int ip, String statusVar, String dataVar, String setAcModelFuncName);
+int setAcModel(String acModelName);
 
 #endif

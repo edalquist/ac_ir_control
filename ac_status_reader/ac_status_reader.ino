@@ -26,9 +26,10 @@ volatile uint8_t* currentByte = byteBuffer;
 
 // Overall state tracking
 AcModels acModel = V1_2;
-long lastUpdate = 0; // millis of successful data parse
-long lastMessage = 0; // millis of of last message sent
+long lastUpdate = 0; // unix seconds of successful data parse
+long lastMessage = 0; // unix seconds of of last message sent
 int acStatesIndex = 0; // Circular buffer index into acStates array
+struct AcState currentAcState;
 struct AcState acStates[AC_STATES_LEN] = {
   {0, 0, 0.0, FAN_OFF, MODE_OFF},
   {0, 0, 0.0, FAN_OFF, MODE_OFF},
@@ -38,13 +39,9 @@ struct AcState acStates[AC_STATES_LEN] = {
 };
 
 
+static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}";
 // Spark variables
-int vTemp = -1;
-double vTimer = -1;
-char vSpeed[2] = "?";
-enum FanSpeeds eSpeed;
-char vMode[2] = "?";
-enum AcModes eMode;
+char statusJson[sizeof(STATUS_TEMPLATE) * 2];
 char registerData[(BUFFER_LEN * 3) + 1];
 
 /**
@@ -71,10 +68,7 @@ void setup() {
   pinMode(INPUT_PIN, INPUT);
 
   // Register display status variables
-  Spark.variable("temp", &vTemp, INT);
-  Spark.variable("timer", &vTimer, DOUBLE);
-  Spark.variable("speed", &vSpeed, STRING);
-  Spark.variable("mode", &vMode, STRING);
+  Spark.variable("status", &statusJson, STRING);
   Spark.variable("data", &registerData, STRING);
 
   // Register control functions
@@ -204,23 +198,21 @@ int getStatusLength() {
 }
 
 void updateVariables(struct AcState acState) {
-  // TODO update published data based on stats array
-  // TODO just cache a reference to the most recently used AcState struct globally for change detection
-
   // Record if any of the data changed, used to decide if an event should be published
   bool changed =
-    vTemp != acState.temp ||
-    vTimer != acState.timer ||
-    eSpeed != acState.speed ||
-    eMode != acState.mode;
+    currentAcState.temp != acState.temp ||
+    currentAcState.timer != acState.timer ||
+    currentAcState.speed != acState.speed ||
+    currentAcState.mode != acState.mode;
 
-  vTemp = acState.temp;
-  vTimer = acState.timer;
-  eSpeed = acState.speed;
-  eMode = acState.mode;
+  // Copy the new state struct to the current state
+  currentAcState = acState;
+
+  char vSpeed[2];
+  char vMode[2];
 
   // TODO turn this into a function
-  switch (acState.speed) {
+  switch (currentAcState.speed) {
     case FAN_OFF:
       strncpy(vSpeed, "X", 2);
       break;
@@ -239,7 +231,7 @@ void updateVariables(struct AcState acState) {
       break;
   }
   // TODO turn this into a function
-  switch (acState.mode) {
+  switch (currentAcState.mode) {
     case MODE_OFF:
       strncpy(vMode, "X", 2);
       break;
@@ -258,15 +250,14 @@ void updateVariables(struct AcState acState) {
       break;
   }
 
-  lastUpdate = acState.timestamp;
+  lastUpdate = currentAcState.timestamp;
 
   if (changed || lastUpdate - lastMessage > 300) {
-    char message[80];
-    sprintf(message, "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}", vTemp, vSpeed, vMode);
+    sprintf(statusJson, STATUS_TEMPLATE, currentAcState.temp, vSpeed, vMode);
     if (changed) {
-      Spark.publish("STATE_CHANGED", message);
+      Spark.publish("STATE_CHANGED", statusJson);
     } else {
-      Spark.publish("STATE_REFRESH", message);
+      Spark.publish("STATE_REFRESH", statusJson);
     }
     lastMessage = Time.now();
   }
