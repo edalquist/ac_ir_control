@@ -23,8 +23,10 @@ enum AcModes {
 };
 
 struct AcState {
+  int timestamp;
   int temp;
   double timer;
   enum FanSpeeds speed;
   enum AcModes mode;
+  bool sleep;
 };
