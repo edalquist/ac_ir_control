@@ -13,5 +13,6 @@ void setup() {
 }
 
 void loop() {
+  // process display data here
   delay(1000); // Sleep 1 second
 }

@@ -8,53 +8,20 @@
 #define AC_STATES_LEN 5
 #define AC_STABLE_STATES 2
 
-
-/**
- * The different Frigidaire AC models supported
- */
-enum AcModels {
-  V1_2, //
-  V1_4  //
-};
-
-/**
- * Various fan speed settings
- */
-enum FanSpeeds {
-  FAN_OFF,
-  FAN_LOW,
-  FAN_MEDIUM,
-  FAN_HIGH,
-  FAN_AUTO,
-  FAN_INVALID
-};
-
-/**
- * Various ac modes
- */
-enum AcModes {
-  MODE_OFF,
-  MODE_FAN,
-  MODE_ECO,
-  MODE_COOL,
-  MODE_INVALID
-};
-
-/**
- * Structure that contains all of the displayed state of the AC unit
- */
-struct AcState {
-  int timestamp;
-  int temp;
-  double timer;
-  enum FanSpeeds speed;
-  enum AcModes mode;
-  bool sleep;
-};
-
 static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}";
 
 int setAcModel(String acModelName);
 void clock_Interrupt_Handler();
+bool parseData(uint8_t parseBuffer[], int pbLen);
+bool parseDataV12(uint8_t parseBuffer[], int pbLen);
+bool parseDataV14(uint8_t parseBuffer[], int pbLen);
+int getStatusLength();
+void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mode, bool isSleep);
+AcModes decodeAcMode(uint8_t modeFanBits);
+FanSpeeds decodeFanSpeed(uint8_t modeFanBits);
+double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits, bool isTimer);
+int decodeDigit(uint8_t digitBits, bool hasDecimal);
+bool compareAcStates(struct AcState s1, struct AcState s2);
+void updateVariables(struct AcState acState);
 
 #endif
