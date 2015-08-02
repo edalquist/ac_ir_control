@@ -32,18 +32,6 @@ enum AcModes {
   MODE_INVALID
 };
 
-/**
- * Structure that contains all of the displayed state of the AC unit
- */
-struct AcState {
-  int timestamp;
-  int temp;
-  double timer;
-  enum FanSpeeds speed;
-  enum AcModes mode;
-  bool sleep;
-};
-
 struct AcDisplayReaderConfig {
   int clockPin;
   int inputPin;
@@ -51,8 +39,10 @@ struct AcDisplayReaderConfig {
   String dataVar;
   String setAcModelFuncName;
   int refreshInterval;
+  int staleInterval;
   String statusChangeEventName;
   String statusRefreshEventName;
+  String statusStaleEventName;
   String parseErrorEventName;
 };
 
@@ -63,13 +53,15 @@ const struct AcDisplayReaderConfig AC_DISPLAY_READER_CONFIG_DEFAULTS {
   .dataVar = "data",
   .setAcModelFuncName = "setAcModel",
   .refreshInterval = 300,
+  .staleInterval = 120,
   .statusChangeEventName = "STATUS_CHANGE",
   .statusRefreshEventName = "STATUS_REFRESH",
+  .statusStaleEventName = "STATUS_STALE",
   .parseErrorEventName = "PARSE_ERROR"
 };
 
-void initAcDisplayReader(int cp, int ip, String statusVar, String dataVar, String setAcModelFuncName);
-void processDisplay();
+void initAcDisplayReader(struct AcDisplayReaderConfig config);
+void processAcDisplayData();
 
 bool isOn();
 int getTemp();

@@ -8,6 +8,18 @@
 #define AC_STATES_LEN 5
 #define AC_STABLE_STATES 2
 
+/**
+ * Structure that contains all of the displayed state of the AC unit
+ */
+struct AcState {
+  int timestamp;
+  int temp;
+  double timer;
+  enum FanSpeeds speed;
+  enum AcModes mode;
+  bool sleep;
+};
+
 static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}";
 
 int setAcModel(String acModelName);

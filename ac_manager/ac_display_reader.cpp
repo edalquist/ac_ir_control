@@ -18,29 +18,30 @@ long lastMessage = 0; // unix seconds of of last message sent
 int acStatesIndex = 0; // Circular buffer index into acStates array
 struct AcState currentAcState;
 struct AcState acStates[AC_STATES_LEN] = {
-  {0, 0, 0.0, FAN_OFF, MODE_OFF},
-  {0, 0, 0.0, FAN_OFF, MODE_OFF},
-  {0, 0, 0.0, FAN_OFF, MODE_OFF},
-  {0, 0, 0.0, FAN_OFF, MODE_OFF},
-  {0, 0, 0.0, FAN_OFF, MODE_OFF}
+  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
+  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
+  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
+  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false}
 };
+struct AcDisplayReaderConfig config;
 char statusJson[sizeof(STATUS_TEMPLATE) * 2];
 char registerData[(BUFFER_LEN * 3) + 1];
 
 
-void initAcDisplayReader(int cp, int ip, String statusVar, String dataVar, String setAcModelFuncName) {
-  clockPin = cp;
-  inputPin = ip;
+void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
+  config = cfg;
+  clockPin = config.clockPin;
+  inputPin = config.inputPin;
 
   pinMode(clockPin, INPUT);
   pinMode(inputPin, INPUT);
 
   // Register display status variables
-  Spark.variable(statusVar, &statusJson, STRING);
-  Spark.variable(dataVar, &registerData, STRING);
+  Spark.variable(config.statusVar, &statusJson, STRING);
+  Spark.variable(config.dataVar, &registerData, STRING);
 
   // Register control functions
-  Spark.function(setAcModelFuncName, setAcModel);
+  Spark.function(config.setAcModelFuncName, setAcModel);
 
   // Setup interrupt handler on rising edge of the register clock
   attachInterrupt(clockPin, clock_Interrupt_Handler, RISING);
@@ -104,7 +105,7 @@ int setAcModel(String acModelName) {
 /**
  * Must be called in loop() to read the state of the AC display from the data collected by the ISR
  */
-void acDisplayLoop() {
+void processAcDisplayData() {
   uint8_t readBuffer[BUFFER_LEN];
 
   // Copy the volatile byteBuffer to a local buffer to minimize the time that interrupts are off
@@ -131,6 +132,12 @@ void acDisplayLoop() {
       // Skip next pbLen bytes, (the end of the successfull parsed buffer)
       rb = rb + pbLen - 1;
     }
+  }
+
+  // If no update for staleInterval publish statusStale event
+  if (Time.now() - lastUpdate > config.staleInterval) {
+    Spark.publish(config.statusStaleEventName, statusJson);
+    lastUpdate += config.staleInterval;
   }
 }
 
@@ -190,9 +197,9 @@ void updateVariables(struct AcState acState) {
 
   sprintf(statusJson, STATUS_TEMPLATE, currentAcState.temp, vSpeed, vMode);
   if (lastUpdate - lastMessage > 300) {
-    Spark.publish("STATE_REFRESH", statusJson);
+    Spark.publish(config.statusRefreshEventName, statusJson);
   } else {
-    Spark.publish("STATE_CHANGED", statusJson);
+    Spark.publish(config.statusChangeEventName, statusJson);
   }
   lastMessage = Time.now();
 }
@@ -207,7 +214,7 @@ bool parseData(uint8_t parseBuffer[], int pbLen) {
 
 bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
   if (pbLen != getStatusLength()) {
-    Spark.publish("PARSE_V12", "BAD LENGTH");
+    Spark.publish(config.parseErrorEventName, "BAD LENGTH");
     // Something is wrong, skip parsing
     return false;
   }
@@ -241,7 +248,7 @@ bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
       // Timer bits are invalid
       char msg[20];
       sprintf(msg, "INVALID TIMER: %02x", parseBuffer[3]);
-      Spark.publish("PARSE_V12", msg);
+      Spark.publish(config.parseErrorEventName, msg);
       return false;
   }
 
@@ -259,7 +266,7 @@ bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
       // Timer bits are invalid
       char msg[20];
       sprintf(msg, "INVALID SLEEP: %02x", parseBuffer[3]);
-      Spark.publish("PARSE_V12", msg);
+      Spark.publish(config.parseErrorEventName, msg);
       return false;
   }
 
@@ -268,7 +275,7 @@ bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
     // Display digits were invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID DISPLAY: %02x %02x", parseBuffer[1], parseBuffer[2]);
-    Spark.publish("PARSE_V12", msg);
+    Spark.publish(config.parseErrorEventName, msg);
     return false;
   }
 
@@ -277,7 +284,7 @@ bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
     // AC Mode was invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID MODE: %02x", parseBuffer[4]);
-    Spark.publish("PARSE_V12", msg);
+    Spark.publish(config.parseErrorEventName, msg);
     return false;
   }
 
@@ -286,7 +293,7 @@ bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
     // Fan Speed was invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID FAN: %02x", parseBuffer[4]);
-    Spark.publish("PARSE_V12", msg);
+    Spark.publish(config.parseErrorEventName, msg);
     return false;
   }
 

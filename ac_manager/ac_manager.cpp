@@ -9,10 +9,14 @@
 
 void setup() {
   initIrController("sendNEC", IR_LED);
-  initAcDisplayReader(CLOCK_PIN, INPUT_PIN, "status", "data", "setAcModel");
+
+  struct AcDisplayReaderConfig acConfig = AC_DISPLAY_READER_CONFIG_DEFAULTS;
+  initAcDisplayReader(acConfig);
 }
 
 void loop() {
+  processAcDisplayData();
+
   // process display data here
   delay(1000); // Sleep 1 second
 }
