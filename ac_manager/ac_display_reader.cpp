@@ -338,11 +338,11 @@ void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mod
   }
 
   // TODO figure out better way to add this debuggging
-  if (maxMatches != AC_STATES_LEN - 1) {
+  /*if (maxMatches != AC_STATES_LEN - 1) {
     char message[80];
     sprintf(message, "mm:%d, [%d, %d, %d, %d, %d]", maxMatches, equivalentStates[0], equivalentStates[1], equivalentStates[2], equivalentStates[3], equivalentStates[4]);
     Spark.publish("EQUIV_STATES", message);
-  }
+  }*/
 
   if (maxMatches >= AC_STABLE_STATES) {
     // Find the stable state with the most recent timestamp
