@@ -33,7 +33,8 @@ AcModes decodeAcMode(uint8_t modeFanBits);
 FanSpeeds decodeFanSpeed(uint8_t modeFanBits);
 double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits, bool isTimer);
 int decodeDigit(uint8_t digitBits, bool hasDecimal);
-bool compareAcStates(struct AcState s1, struct AcState s2);
-void updateVariables(struct AcState acState);
+bool compareAcStates(struct AcState* s1, struct AcState* s2);
+void updateVariables(struct AcState* acState);
+void copyAcStates(struct AcState* from, struct AcState* to);
 
 #endif

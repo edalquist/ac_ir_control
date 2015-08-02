@@ -13,15 +13,15 @@ volatile uint8_t* currentByte = byteBuffer;
 
 // Overall state tracking
 AcModels acModel = V1_2;
-long lastUpdate = 0; // unix seconds of successful data parse
+long lastUpdate = Time.now(); // unix seconds of successful data parse
 long lastMessage = 0; // unix seconds of of last message sent
 int acStatesIndex = 0; // Circular buffer index into acStates array
-struct AcState currentAcState;
+struct AcState currentAcState = {.timestamp = -1, .temp = -1, .timer = -1.0, .speed = FAN_INVALID, .mode = MODE_INVALID, .sleep = false};
 struct AcState acStates[AC_STATES_LEN] = {
-  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
-  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
-  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false},
-  {.timestamp = 0, .temp = 0, .timer = 0.0, .speed = FAN_OFF, .mode = MODE_OFF, .sleep = false}
+  {.timestamp = -1, .temp = -1, .timer = -1.0, .speed = FAN_INVALID, .mode = MODE_INVALID, .sleep = false},
+  {.timestamp = -1, .temp = -1, .timer = -1.0, .speed = FAN_INVALID, .mode = MODE_INVALID, .sleep = false},
+  {.timestamp = -1, .temp = -1, .timer = -1.0, .speed = FAN_INVALID, .mode = MODE_INVALID, .sleep = false},
+  {.timestamp = -1, .temp = -1, .timer = -1.0, .speed = FAN_INVALID, .mode = MODE_INVALID, .sleep = false}
 };
 struct AcDisplayReaderConfig config;
 char statusJson[sizeof(STATUS_TEMPLATE) * 2];
@@ -135,21 +135,22 @@ void processAcDisplayData() {
   }
 
   // If no update for staleInterval publish statusStale event
-  if (Time.now() - lastUpdate > config.staleInterval) {
+  int now = Time.now();
+  if (now - lastUpdate > config.staleInterval) {
     Spark.publish(config.statusStaleEventName, statusJson);
-    lastUpdate += config.staleInterval;
+    lastUpdate += now + config.staleInterval;
   }
 }
 
-void updateVariables(struct AcState acState) {
+void updateVariables(struct AcState* acState) {
   // Record if any of the data changed, used to decide if an event should be published
-  bool changed = compareAcStates(currentAcState, acState);
-  if (!changed) {
+  bool match = compareAcStates(&currentAcState, acState);
+  if (match) {
     return;
   }
 
   // Copy the new state struct to the current state
-  currentAcState = acState;
+  copyAcStates(acState, &currentAcState);
 
   char vSpeed[2];
   char vMode[2];
@@ -330,7 +331,7 @@ void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mod
   // iterate through acStates comparing each entry to each other entry
   for (int i = 0; i < AC_STATES_LEN; i++) {
     for (int o = i + 1; o < AC_STATES_LEN; o++) {
-      if (compareAcStates(acStates[i], acStates[o])) {
+      if (compareAcStates(&acStates[i], &acStates[o])) {
         maxMatches = max(maxMatches, max(++equivalentStates[i], ++equivalentStates[o]));
       }
     }
@@ -356,7 +357,7 @@ void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mod
 
     // Protect against OOB and then update the variables
     if (maxIndex >= 0 && maxIndex < AC_STATES_LEN) {
-      updateVariables(acStates[maxIndex]);
+      updateVariables(&acStates[maxIndex]);
     }
   }
 }
@@ -478,10 +479,18 @@ AcModes decodeAcMode(uint8_t modeFanBits) {
   }
 }
 
-bool compareAcStates(struct AcState s1, struct AcState s2) {
-  return s1.temp == s2.temp &&
-    s1.timer == s2.timer &&
-    s1.speed == s2.speed &&
-    s1.mode == s2.mode &&
-    s1.sleep == s2.sleep;
+bool compareAcStates(struct AcState* s1, struct AcState* s2) {
+  return s1->temp == s2->temp &&
+    s1->timer == s2->timer &&
+    s1->speed == s2->speed &&
+    s1->mode == s2->mode &&
+    s1->sleep == s2->sleep;
+}
+
+void copyAcStates(struct AcState* from, struct AcState* to) {
+  to->temp = from->temp;
+  to->timer = from->timer;
+  to->speed = from->speed;
+  to->mode = from->mode;
+  to->sleep = from->sleep;
 }

@@ -18,5 +18,5 @@ void loop() {
   processAcDisplayData();
 
   // process display data here
-  delay(1000); // Sleep 1 second
+  delay(10000); // Sleep 1 second
 }
