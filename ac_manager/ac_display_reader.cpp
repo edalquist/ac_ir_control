@@ -27,6 +27,36 @@ struct AcDisplayReaderConfig config;
 char statusJson[sizeof(STATUS_TEMPLATE) * 2];
 char registerData[(BUFFER_LEN * 3) + 1];
 
+enum AcModes getModeForName(String modeName) {
+  if (modeName == "MODE_OFF") {
+    return MODE_OFF;
+  } else if (modeName == "MODE_FAN") {
+    return MODE_FAN;
+  } else if (modeName == "MODE_ECO") {
+    return MODE_ECO;
+  } else if (modeName == "MODE_COOL") {
+    return MODE_COOL;
+  } else {
+    return MODE_INVALID;
+  }
+}
+
+enum FanSpeeds getSpeedForName(String speedName) {
+  if (speedName == "FAN_OFF") {
+      return FAN_OFF;
+  } else if (speedName == "FAN_LOW") {
+      return FAN_LOW;
+  } else if (speedName == "FAN_MEDIUM") {
+      return FAN_MEDIUM;
+  } else if (speedName == "FAN_HIGH") {
+      return FAN_HIGH;
+  } else if (speedName == "FAN_AUTO") {
+      return FAN_AUTO;
+  } else {
+      return FAN_INVALID;
+  }
+}
+
 
 void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
   config = cfg;
@@ -45,6 +75,26 @@ void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
 
   // Setup interrupt handler on rising edge of the register clock
   attachInterrupt(clockPin, clock_Interrupt_Handler, RISING);
+}
+
+bool isAcOn() {
+  return currentAcState.speed != FAN_OFF && currentAcState.speed != FAN_INVALID;
+}
+
+int getTemp() {
+  return currentAcState.temp;
+}
+
+double getTimer() {
+  return currentAcState.timer;
+}
+
+enum FanSpeeds getFanSpeed() {
+  return currentAcState.speed;
+}
+
+enum AcModes getAcMode() {
+  return currentAcState.mode;
 }
 
 /**
@@ -199,10 +249,11 @@ void updateVariables(struct AcState* acState) {
   sprintf(statusJson, STATUS_TEMPLATE, currentAcState.temp, vSpeed, vMode);
   if (lastUpdate - lastMessage > 300) {
     Spark.publish(config.statusRefreshEventName, statusJson);
+    lastMessage = Time.now();
   } else {
     Spark.publish(config.statusChangeEventName, statusJson);
+    lastMessage = Time.now();
   }
-  lastMessage = Time.now();
 }
 
 bool parseData(uint8_t parseBuffer[], int pbLen) {

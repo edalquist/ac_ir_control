@@ -21,6 +21,7 @@ enum FanSpeeds {
   FAN_INVALID
 };
 
+
 /**
  * Various ac modes
  */
@@ -63,11 +64,13 @@ const struct AcDisplayReaderConfig AC_DISPLAY_READER_CONFIG_DEFAULTS {
 void initAcDisplayReader(struct AcDisplayReaderConfig config);
 void processAcDisplayData();
 
-bool isOn();
+bool isAcOn();
 int getTemp();
 double getTimer();
 enum FanSpeeds getFanSpeed();
 enum AcModes getAcMode();
 enum AcModels getAcModel();
+enum AcModes getModeForName(String modeName);
+enum FanSpeeds getSpeedForName(String speedName);
 
 #endif
