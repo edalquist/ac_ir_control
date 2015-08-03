@@ -75,8 +75,8 @@ int setState(String command) {
     }
   }
 
-  // Try to get AC to the correct state for up to 30 seconds
-  while (Time.now() - start < 5) {
+  // Try to get AC to the correct state for up to 10 seconds
+  while (Time.now() - start < 10) {
     // Special handling for OFF
     if (mode == MODE_OFF) {
       if (isAcOn()) {
@@ -138,10 +138,6 @@ int setState(String command) {
       if (mode != MODE_FAN && temp != getTemp()) {
         stable = false;
         int tempDiff = temp - getTemp();
-        char msg[20];
-        sprintf(msg, "%d - %d = %d", temp, getTemp(), tempDiff);
-        Spark.publish("TEMP", msg);
-
         if (tempDiff < 0) {
           for (int i = 0; i < abs(tempDiff); i++) {
             sendNEC(AC_CMD__TEMP_TIMER_D);
@@ -155,7 +151,6 @@ int setState(String command) {
 
       // Yay at a stable state!
       if (stable) {
-        Spark.publish("STABLE", "YAY");
         return 0;
       }
     }
