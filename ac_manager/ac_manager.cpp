@@ -52,29 +52,31 @@ int setState(String command) {
       return 2;
     }
 
-    int secondComma = command.indexOf(",", firstComma);
+    int secondComma = command.indexOf(",", firstComma + 1);
     if (secondComma == -1) {
       return 3;
     }
 
-    int temp = command.substring(0, firstComma).toInt();
+    temp = command.substring(0, firstComma).toInt();
     if (temp <= 60 || temp >= 80) {
       return 4;
     }
 
     mode = getModeForName(command.substring(firstComma + 1, secondComma));
     if (mode == MODE_INVALID) {
+      Spark.publish("MODE", command.substring(firstComma + 1, secondComma));
       return 5;
     }
 
     speed = getSpeedForName(command.substring(secondComma + 1));
     if (speed == FAN_INVALID) {
+      Spark.publish("SPEED", command.substring(secondComma + 1));
       return 6;
     }
   }
 
   // Try to get AC to the correct state for up to 30 seconds
-  while (Time.now() - start < 30) {
+  while (Time.now() - start < 5) {
     // Special handling for OFF
     if (mode == MODE_OFF) {
       if (isAcOn()) {
@@ -91,12 +93,15 @@ int setState(String command) {
         stable = false;
         switch (mode) {
           case MODE_FAN:
+            Spark.publish("MODE", "MODE_FAN");
             sendNEC(AC_CMD__FAN_ONLY);
             break;
           case MODE_ECO:
+            Spark.publish("MODE", "MODE_ECO");
             sendNEC(AC_CMD__ENERGY_SAVER);
             break;
           case MODE_COOL:
+            Spark.publish("MODE", "MODE_COOL");
             sendNEC(AC_CMD__COOL);
             break;
         }
@@ -106,20 +111,24 @@ int setState(String command) {
         stable = false;
         switch (speed) {
           case FAN_AUTO:
+            Spark.publish("SPEED", "FAN_AUTO");
             sendNEC(AC_CMD__AUTO_FAN);
             break;
           case FAN_LOW:
+            Spark.publish("SPEED", "FAN_LOW");
             sendNEC(AC_CMD__FAN_SPEED_D);
             sendNEC(AC_CMD__FAN_SPEED_D);
             sendNEC(AC_CMD__FAN_SPEED_D);
             break;
           case FAN_MEDIUM:
+            Spark.publish("SPEED", "FAN_MEDIUM");
             sendNEC(AC_CMD__FAN_SPEED_D);
             sendNEC(AC_CMD__FAN_SPEED_D);
             sendNEC(AC_CMD__FAN_SPEED_D);
             sendNEC(AC_CMD__FAN_SPEED_U);
             break;
           case FAN_HIGH:
+            Spark.publish("SPEED", "FAN_HIGH");
             sendNEC(AC_CMD__FAN_SPEED_U);
             sendNEC(AC_CMD__FAN_SPEED_U);
             break;
@@ -129,6 +138,10 @@ int setState(String command) {
       if (mode != MODE_FAN && temp != getTemp()) {
         stable = false;
         int tempDiff = temp - getTemp();
+        char msg[20];
+        sprintf(msg, "%d - %d = %d", temp, getTemp(), tempDiff);
+        Spark.publish("TEMP", msg);
+
         if (tempDiff < 0) {
           for (int i = 0; i < abs(tempDiff); i++) {
             sendNEC(AC_CMD__TEMP_TIMER_D);
@@ -142,7 +155,8 @@ int setState(String command) {
 
       // Yay at a stable state!
       if (stable) {
-        break;
+        Spark.publish("STABLE", "YAY");
+        return 0;
       }
     }
 
@@ -164,5 +178,5 @@ void loop() {
   processAcDisplayData();
 
   // process display data here
-  delay(1000); // Sleep 1 second
+  delay(5000); // Sleep 1 second
 }
