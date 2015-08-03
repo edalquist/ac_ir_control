@@ -75,6 +75,8 @@ void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
 
   // Setup interrupt handler on rising edge of the register clock
   attachInterrupt(clockPin, clock_Interrupt_Handler, RISING);
+
+  void loadAcModel();
 }
 
 bool isAcOn() {
@@ -135,6 +137,17 @@ void clock_Interrupt_Handler() {
   }
 }
 
+void loadAcModel() {
+  uint8_t modelFlag = EEPROM.read(1);
+  if (modelFlag == 12) {
+    Spark.publish("AC_MODEL", "v1.2");
+    acModel = V1_2;
+  } else {
+    Spark.publish("AC_MODEL", "v1.4");
+    acModel = V1_4;
+  }
+}
+
 /**
  * Spark Function letting me switch AC Models while running
  * maybe read/write this in EEPROM
@@ -144,10 +157,12 @@ void clock_Interrupt_Handler() {
 int setAcModel(String acModelName) {
   if (acModelName == "V1_2") {
     acModel = V1_2;
+    EEPROM.write(1, 12);
     return 12;
   } else {
     // Default to V1_4
     acModel = V1_4;
+    EEPROM.write(1, 14);
     return 14;
   }
 }
