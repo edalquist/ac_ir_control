@@ -64,13 +64,13 @@ int setState(String command) {
 
     mode = getModeForName(command.substring(firstComma + 1, secondComma));
     if (mode == MODE_INVALID) {
-      Spark.publish("MODE", command.substring(firstComma + 1, secondComma));
+      Spark.publish("MODE_INVALID", command.substring(firstComma + 1, secondComma));
       return 5;
     }
 
     speed = getSpeedForName(command.substring(secondComma + 1));
     if (speed == FAN_INVALID) {
-      Spark.publish("SPEED", command.substring(secondComma + 1));
+      Spark.publish("FAN_INVALID", command.substring(secondComma + 1));
       return 6;
     }
   }
@@ -80,12 +80,14 @@ int setState(String command) {
     // Special handling for OFF
     if (mode == MODE_OFF) {
       if (isAcOn()) {
+        Spark.publish("OFF", "");
         sendNEC(AC_CMD__ON_OFF);
       } else {
         break;
       }
     } else if (!isAcOn()) {
       // First turn it on if it is off
+      Spark.publish("ON", "");
       sendNEC(AC_CMD__ON_OFF);
     } else {
       bool stable = true;
@@ -156,7 +158,7 @@ int setState(String command) {
     }
 
     // Wait for the AC to handle IR codes and the display to update
-    delay(1000);
+    delay(2000);
     processAcDisplayData();
   }
 

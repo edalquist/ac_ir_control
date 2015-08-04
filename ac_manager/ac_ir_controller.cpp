@@ -4,6 +4,7 @@
 
 unsigned long sigTime = 0; //use in mark & space functions to keep track of time
 int txPinIR;
+int lastStartMillis = 0;
 
 void initIrController(String funcKey, int irLedPin) {
   txPinIR = irLedPin;
@@ -29,6 +30,12 @@ unsigned int decodeNECHex(String codeHex) {
 }
 
 int sendNECCode(unsigned int codeBin) {
+  // Don't send IR codes more than once every 110ms
+  int sleepTime = min(110, max(0, 110 - (millis() - lastStartMillis)));
+  if (sleepTime > 0) {
+    delay(sleepTime);
+  }
+
   // Disable interrupts while sending IR code to not break the timing
   noInterrupts();
 

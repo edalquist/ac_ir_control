@@ -76,7 +76,7 @@ void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
   // Setup interrupt handler on rising edge of the register clock
   attachInterrupt(clockPin, clock_Interrupt_Handler, RISING);
 
-  void loadAcModel();
+  loadAcModel();
 }
 
 bool isAcOn() {
