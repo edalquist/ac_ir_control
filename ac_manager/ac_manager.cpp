@@ -2,6 +2,7 @@
 #include "ac_display_reader.h"
 #include "ac_ir_controller.h"
 #include "ac_manager.h"
+#include "wifi_keepalive.h"
 
 #define IR_LED   D6   //IR carrier output pin
 
@@ -27,6 +28,8 @@ void setup() {
   initAcDisplayReader(acConfig);
 
   Spark.function("setState", setState);
+
+  setupConnectionCheck();
 }
 
 /**
@@ -36,8 +39,11 @@ void setup() {
  *
  */
 int setState(String command) {
+  Spark.publish("SET_STATE", command);
+
   int start = Time.now();
 
+  bool toggleOn = false;
   int temp;
   enum AcModes mode;
   enum FanSpeeds speed;
@@ -46,6 +52,8 @@ int setState(String command) {
     temp = 0;
     mode = MODE_OFF;
     speed = FAN_OFF;
+  } else if (command == "ON") {
+    toggleOn = true;
   } else {
     int firstComma = command.indexOf(",");
     if (firstComma == -1) {
@@ -78,7 +86,15 @@ int setState(String command) {
   // Try to get AC to the correct state for up to 10 seconds
   while (Time.now() - start < 10) {
     // Special handling for OFF
-    if (mode == MODE_OFF) {
+    if (toggleOn) {
+      if (!isAcOn()) {
+        Spark.publish("ON", "");
+        sendNEC(AC_CMD__ON_OFF);
+      } else {
+        break;
+      }
+    }
+    else if (mode == MODE_OFF) {
       if (isAcOn()) {
         Spark.publish("OFF", "");
         sendNEC(AC_CMD__ON_OFF);
@@ -172,6 +188,8 @@ int setState(String command) {
 }
 
 void loop() {
+  checkConnection();
+
   processAcDisplayData();
 
   // process display data here

@@ -77,6 +77,8 @@ void initAcDisplayReader(struct AcDisplayReaderConfig cfg) {
   attachInterrupt(clockPin, clock_Interrupt_Handler, RISING);
 
   loadAcModel();
+
+  updateVariables(&currentAcState, true);
 }
 
 bool isAcOn() {
@@ -140,10 +142,8 @@ void clock_Interrupt_Handler() {
 void loadAcModel() {
   uint8_t modelFlag = EEPROM.read(1);
   if (modelFlag == 12) {
-    Spark.publish("AC_MODEL", "v1.2");
     acModel = V1_2;
   } else {
-    Spark.publish("AC_MODEL", "v1.4");
     acModel = V1_4;
   }
 }
@@ -201,16 +201,16 @@ void processAcDisplayData() {
 
   // If no update for staleInterval publish statusStale event
   int now = Time.now();
-  if (now - lastUpdate > config.staleInterval) {
+  if (now - lastMessage > config.staleInterval) {
     Spark.publish(config.statusStaleEventName, statusJson);
-    lastUpdate += now + config.staleInterval;
+    lastMessage += now + config.staleInterval;
   }
 }
 
-void updateVariables(struct AcState* acState) {
+void updateVariables(struct AcState* acState, bool force) {
   // Record if any of the data changed, used to decide if an event should be published
   bool match = compareAcStates(&currentAcState, acState);
-  if (match) {
+  if (!force && match) {
     return;
   }
 
@@ -219,6 +219,7 @@ void updateVariables(struct AcState* acState) {
 
   char vSpeed[2];
   char vMode[2];
+  char version[4];
 
   // TODO turn this into a function
   switch (currentAcState.speed) {
@@ -261,10 +262,22 @@ void updateVariables(struct AcState* acState) {
       strncpy(vMode, "?", 2);
       break;
   }
+  // TODO turn this into a function
+  switch (acModel) {
+    case V1_2:
+      strncpy(version, "1.2", 4);
+      break;
+    case V1_4:
+      strncpy(version, "1.4", 4);
+      break;
+    default:
+      strncpy(version, "?.?", 4);
+      break;
+  }
 
   lastUpdate = currentAcState.timestamp;
 
-  sprintf(statusJson, STATUS_TEMPLATE, currentAcState.temp, vSpeed, vMode);
+  sprintf(statusJson, STATUS_TEMPLATE, currentAcState.temp, vSpeed, vMode, version);
   if (lastUpdate - lastMessage > 300) {
     Spark.publish(config.statusRefreshEventName, statusJson);
     lastMessage = Time.now();
@@ -488,7 +501,7 @@ void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mod
 
     // Protect against OOB and then update the variables
     if (maxIndex >= 0 && maxIndex < AC_STATES_LEN) {
-      updateVariables(&acStates[maxIndex]);
+      updateVariables(&acStates[maxIndex], false);
     }
   }
 }

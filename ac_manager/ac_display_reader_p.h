@@ -20,7 +20,7 @@ struct AcState {
   bool sleep;
 };
 
-static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\"}";
+static const char STATUS_TEMPLATE[] = "{\"temp\":%d,\"fan\":\"%s\",\"mode\":\"%s\",\"version\":\"%s\"}";
 
 int setAcModel(String acModelName);
 void clock_Interrupt_Handler();
@@ -34,7 +34,7 @@ FanSpeeds decodeFanSpeed(uint8_t modeFanBits);
 double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits, bool isTimer);
 int decodeDigit(uint8_t digitBits, bool hasDecimal);
 bool compareAcStates(struct AcState* s1, struct AcState* s2);
-void updateVariables(struct AcState* acState);
+void updateVariables(struct AcState* acState, bool force);
 void copyAcStates(struct AcState* from, struct AcState* to);
 void loadAcModel();
 
