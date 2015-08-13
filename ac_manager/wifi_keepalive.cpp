@@ -9,8 +9,8 @@ int lastCheck;
 int lastResponse;
 
 void setupConnectionCheck() {
-  checkInterval = 30;
-  resetInterval = 90;
+  checkInterval = 10;
+  resetInterval = 40;
   IPAddress pd(192, 168, 0, 1);
   pingDest = pd;
 

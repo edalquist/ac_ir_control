@@ -9,6 +9,9 @@
 #define CLOCK_PIN D2
 #define INPUT_PIN D1
 
+#define MIN_TEMP  60
+#define MAX_TEMP  90
+
 #define AC_CMD__ON_OFF        "10AF8877"
 #define AC_CMD__TIMER         "10AF609F"
 #define AC_CMD__FAN_SPEED_U   "10AF807F"
@@ -66,7 +69,7 @@ int setState(String command) {
     }
 
     temp = command.substring(0, firstComma).toInt();
-    if (temp <= 60 || temp >= 80) {
+    if (temp < MIN_TEMP || temp > MAX_TEMP) {
       return 4;
     }
 

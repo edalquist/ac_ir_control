@@ -1,4 +1,8 @@
 #include "application.h"
+#include "ac_parser.h"
+#include "ac_parser_v12.h"
+#include "ac_parser_v14.h"
+#include "ac_parser_v18.h"
 #include "ac_display_reader.h"
 #include "ac_display_reader_p.h"
 
@@ -26,6 +30,11 @@ struct AcState acStates[AC_STATES_LEN] = {
 struct AcDisplayReaderConfig config;
 char statusJson[sizeof(STATUS_TEMPLATE) * 2];
 char registerData[(BUFFER_LEN * 3) + 1];
+
+// Define versioned parsers
+AcManager::AcParserV12 acParserV12;
+AcManager::AcParserV14 acParserV14;
+AcManager::AcParserV18 acParserV18;
 
 enum AcModes getModeForName(String modeName) {
   if (modeName == "MODE_OFF") {
@@ -141,10 +150,18 @@ void clock_Interrupt_Handler() {
 
 void loadAcModel() {
   uint8_t modelFlag = EEPROM.read(1);
-  if (modelFlag == 12) {
-    acModel = V1_2;
-  } else {
-    acModel = V1_4;
+  switch (modelFlag) {
+    default:
+    case 12:
+      acModel = V1_2;
+      break;
+    case 14:
+      acModel = V1_4;
+      break;
+    case 18:
+      acModel = V1_8;
+      break;
+
   }
 }
 
@@ -155,15 +172,18 @@ void loadAcModel() {
  * http://docs.particle.io/core/firmware/#other-functions-eeprom
  */
 int setAcModel(String acModelName) {
-  if (acModelName == "V1_2") {
-    acModel = V1_2;
-    EEPROM.write(1, 12);
-    return 12;
-  } else {
-    // Default to V1_4
+  if (acModelName == "V1_8") {
+    acModel = V1_8;
+    EEPROM.write(1, 18);
+    return 18;
+  } else if (acModelName == "V1_4") {
     acModel = V1_4;
     EEPROM.write(1, 14);
     return 14;
+  } else {
+    acModel = V1_2;
+    EEPROM.write(1, 12);
+    return 12;
   }
 }
 
@@ -186,16 +206,23 @@ void processAcDisplayData() {
   }
 
   // Chunk the read buffer out into parse buffers and attempt to parse each one
-  int pbLen = getStatusLength();
+  /*int pbLen = getStatusLength();*/
+  AcManager::AcParser* acParser = getAcParser();
+  int pbLen = acParser->getDataLength();
+
   uint8_t parseBuffer[pbLen];
   for (int rb = 0; rb < BUFFER_LEN; rb++) {
     for (int pb = 0; pb < pbLen; pb++) {
       parseBuffer[pb] = readBuffer[(rb + pb) % BUFFER_LEN];
     }
-    bool parsed = parseData(parseBuffer, pbLen);
+    struct AcState *acState = &acStates[acStatesIndex];
+    bool parsed = acParser->parseState(acState, parseBuffer, pbLen);
     if (parsed) {
       // Skip next pbLen bytes, (the end of the successfull parsed buffer)
       rb = rb + pbLen - 1;
+
+      // Update the shared variables based on the state
+      updateStates();
     }
   }
 
@@ -204,6 +231,52 @@ void processAcDisplayData() {
   if (now - lastMessage > config.staleInterval) {
     Spark.publish(config.statusStaleEventName, statusJson);
     lastMessage += now + config.staleInterval;
+  }
+}
+
+void updateStates() {
+  // Update most recent state with the current timestamp
+  acStates[acStatesIndex].timestamp = Time.now();
+
+  // Increment states index to the next position
+  acStatesIndex = (acStatesIndex + 1) % AC_STATES_LEN;
+
+  // Track the entry with the most matches, the index it exists at and the match count for every
+  // entry
+  int maxMatches = 0;
+  int equivalentStates[AC_STATES_LEN] = { 0 };
+
+  // iterate through acStates comparing each entry to each other entry
+  for (int i = 0; i < AC_STATES_LEN; i++) {
+    for (int o = i + 1; o < AC_STATES_LEN; o++) {
+      if (compareAcStates(&acStates[i], &acStates[o])) {
+        maxMatches = max(maxMatches, max(++equivalentStates[i], ++equivalentStates[o]));
+      }
+    }
+  }
+
+  // TODO figure out better way to add this debuggging
+  /*if (maxMatches != AC_STATES_LEN - 1) {
+    char message[80];
+    sprintf(message, "mm:%d, [%d, %d, %d, %d, %d]", maxMatches, equivalentStates[0], equivalentStates[1], equivalentStates[2], equivalentStates[3], equivalentStates[4]);
+    Spark.publish("EQUIV_STATES", message);
+  }*/
+
+  if (maxMatches >= AC_STABLE_STATES) {
+    // Find the stable state with the most recent timestamp
+    int mostRecent = 0;
+    int maxIndex = -1;
+    for (int i = 0; i < AC_STATES_LEN; i++) {
+      if (equivalentStates[i] == maxMatches && acStates[i].timestamp > mostRecent) {
+        mostRecent = acStates[i].timestamp;
+        maxIndex = i;
+      }
+    }
+
+    // Protect against OOB and then update the variables
+    if (maxIndex >= 0 && maxIndex < AC_STATES_LEN) {
+      updateVariables(&acStates[maxIndex], false);
+    }
   }
 }
 
@@ -270,6 +343,9 @@ void updateVariables(struct AcState* acState, bool force) {
     case V1_4:
       strncpy(version, "1.4", 4);
       break;
+    case V1_8:
+      strncpy(version, "1.8", 4);
+      break;
     default:
       strncpy(version, "?.?", 4);
       break;
@@ -287,343 +363,15 @@ void updateVariables(struct AcState* acState, bool force) {
   }
 }
 
-bool parseData(uint8_t parseBuffer[], int pbLen) {
-  if (acModel == V1_2) {
-    return parseDataV12(parseBuffer, pbLen);
-  } else {
-    return parseDataV14(parseBuffer, pbLen);
-  }
-}
-
-bool parseDataV12(uint8_t parseBuffer[], int pbLen) {
-  if (pbLen != getStatusLength()) {
-    Spark.publish(config.parseErrorEventName, "BAD LENGTH");
-    // Something is wrong, skip parsing
-    return false;
-  }
-
-  // If all 5 bytes are 0xFF the unit is off
-  bool isOff = true;
-  for (int i = 0; i < pbLen && isOff; i++) {
-    isOff = parseBuffer[i] == 0xFF;
-  }
-  if (isOff) {
-    updateStates(0, 0, FAN_OFF, MODE_OFF, false);
-    return false;
-  }
-
-  // All valid buffers have the FF for the first byte
-  if (parseBuffer[0] != 0xFF) {
-    return false;
-  }
-
-  // If bit 5 of byte 3 is false timer is on
-  bool isTimer;
-  uint8_t timerMasked = parseBuffer[3] & 0b11110000;
-  switch (timerMasked) {
-    case 0xD0:
-      isTimer = true;
-      break;
-    case 0x70:
-      isTimer = false;
-      break;
+AcManager::AcParser* getAcParser() {
+  switch (acModel) {
     default:
-      // Timer bits are invalid
-      char msg[20];
-      sprintf(msg, "INVALID TIMER: %02x", parseBuffer[3]);
-      Spark.publish(config.parseErrorEventName, msg);
-      return false;
-  }
-
-  // If bit 5 of byte 3 is false timer is on
-  bool isSleep;
-  uint8_t sleepMasked = parseBuffer[3] & 0b00001111;
-  switch (sleepMasked) {
-    case 0x0E:
-      isSleep = true;
-      break;
-    case 0x0F:
-      isSleep = false;
-      break;
-    default:
-      // Timer bits are invalid
-      char msg[20];
-      sprintf(msg, "INVALID SLEEP: %02x", parseBuffer[3]);
-      Spark.publish(config.parseErrorEventName, msg);
-      return false;
-  }
-
-  double display = decodeDisplayNumber(parseBuffer[1], parseBuffer[2], isTimer);
-  if (display == -1) {
-    // Display digits were invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID DISPLAY: %02x %02x", parseBuffer[1], parseBuffer[2]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  enum AcModes acMode = decodeAcMode(parseBuffer[4]);
-  if (acMode == MODE_INVALID) {
-    // AC Mode was invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID MODE: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  enum FanSpeeds fanSpeed = decodeFanSpeed(parseBuffer[4]);
-  if (fanSpeed == FAN_INVALID) {
-    // Fan Speed was invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID FAN: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  if (isTimer) {
-    updateStates(0, display, fanSpeed, acMode, isSleep);
-  } else {
-    updateStates((int) display, 0, fanSpeed, acMode, isSleep);
-  }
-
-  return true;
-}
-
-bool parseDataV14(uint8_t parseBuffer[], int pbLen) {
-  if (pbLen != getStatusLength()) {
-    Spark.publish(config.parseErrorEventName, "BAD LENGTH");
-    // Something is wrong, skip parsing
-    return false;
-  }
-
-  // Ensure the first two bytes are the header
-  if (parseBuffer[0] != 0x7F || parseBuffer[1] != 0x7F) {
-    return false;
-  }
-
-  // If th next 4 bytes are 0xFF the unit is off
-  bool isOff = true;
-  for (int i = 2; i < pbLen && isOff; i++) {
-    isOff = parseBuffer[i] == 0xFF;
-  }
-  if (isOff) {
-    updateStates(0, 0, FAN_OFF, MODE_OFF, false);
-    return false;
-  }
-
-  // All valid buffers have the FD for the last byte
-  if (parseBuffer[5] != 0xFD) {
-    return false;
-  }
-
-  // If bit 7 of byte 4 is false timer is on
-  bool isTimer = (parseBuffer[4] & 0b1000000) != 0b1000000;
-
-  double display = decodeDisplayNumber(parseBuffer[2], parseBuffer[3], isTimer);
-  if (display == -1) {
-    // Display digits were invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID DISPLAY: %02x %02x", parseBuffer[2], parseBuffer[3]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  enum AcModes acMode = decodeAcMode(parseBuffer[4]);
-  if (acMode == MODE_INVALID) {
-    // AC Mode was invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID MODE: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  enum FanSpeeds fanSpeed = decodeFanSpeed(parseBuffer[4]);
-  if (fanSpeed == FAN_INVALID) {
-    // Fan Speed was invalid, ignore buffer
-    char msg[20];
-    sprintf(msg, "INVALID FAN: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
-    return false;
-  }
-
-  if (isTimer) {
-    updateStates(0, display, fanSpeed, acMode, false);
-  } else {
-    updateStates((int) display, 0, fanSpeed, acMode, false);
-  }
-
-  return true;
-}
-
-void updateStates(int temp, double timer, enum FanSpeeds speed, enum AcModes mode, bool isSleep) {
-  // Update the next index in the states array with the pushed data
-  acStates[acStatesIndex].timestamp = Time.now();
-  acStates[acStatesIndex].temp = temp;
-  acStates[acStatesIndex].timer = timer;
-  acStates[acStatesIndex].speed = speed;
-  acStates[acStatesIndex].mode = mode;
-  acStates[acStatesIndex].sleep = isSleep;
-
-  // Increment states index to the next position
-  acStatesIndex = (acStatesIndex + 1) % AC_STATES_LEN;
-
-  // Track the entry with the most matches, the index it exists at and the match count for every
-  // entry
-  int maxMatches = 0;
-  int equivalentStates[AC_STATES_LEN] = { 0 };
-
-  // iterate through acStates comparing each entry to each other entry
-  for (int i = 0; i < AC_STATES_LEN; i++) {
-    for (int o = i + 1; o < AC_STATES_LEN; o++) {
-      if (compareAcStates(&acStates[i], &acStates[o])) {
-        maxMatches = max(maxMatches, max(++equivalentStates[i], ++equivalentStates[o]));
-      }
-    }
-  }
-
-  // TODO figure out better way to add this debuggging
-  /*if (maxMatches != AC_STATES_LEN - 1) {
-    char message[80];
-    sprintf(message, "mm:%d, [%d, %d, %d, %d, %d]", maxMatches, equivalentStates[0], equivalentStates[1], equivalentStates[2], equivalentStates[3], equivalentStates[4]);
-    Spark.publish("EQUIV_STATES", message);
-  }*/
-
-  if (maxMatches >= AC_STABLE_STATES) {
-    // Find the stable state with the most recent timestamp
-    int mostRecent = 0;
-    int maxIndex = -1;
-    for (int i = 0; i < AC_STATES_LEN; i++) {
-      if (equivalentStates[i] == maxMatches && acStates[i].timestamp > mostRecent) {
-        mostRecent = acStates[i].timestamp;
-        maxIndex = i;
-      }
-    }
-
-    // Protect against OOB and then update the variables
-    if (maxIndex >= 0 && maxIndex < AC_STATES_LEN) {
-      updateVariables(&acStates[maxIndex], false);
-    }
-  }
-}
-
-/**
- * Number of bytes in the AC display status update
- */
-int getStatusLength() {
-  if (acModel == V1_2) {
-    return 5;
-  } else { // V1_4
-    return 6;
-  }
-}
-
-/**
- * Decode the number bits that control the 8 segment display
- */
-int decodeDigit(uint8_t digitBits, bool hasDecimal) {
-  if (hasDecimal && (digitBits & 0b10000000) == 0b10000000) {
-    // should have decimal but doesn't
-    return -1;
-  } else if (!hasDecimal && (digitBits & 0b10000000) == 0) {
-    // Shouldn't have a decimal but does
-    return -1;
-  }
-
-  // Ensure the top bit is true to make the switch work no matter the state of the decimal place
-  uint8_t decimalMasked = digitBits | 0x80;
-  switch (decimalMasked) {
-    case 0x90:
-      return 9;
-    case 0x80:
-      return 8;
-    case 0xF8:
-      return 7;
-    case 0x82:
-      return 6;
-    case 0x92:
-      return 5;
-    case 0x99:
-      return 4;
-    case 0xB0:
-      return 3;
-    case 0xA4:
-      return 2;
-    case 0xF9:
-      return 1;
-    case 0xC0:
-      return 0;
-    default:
-      return -1;
-  }
-}
-
-double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits, bool isTimer) {
-  int tens = decodeDigit(tensBits, isTimer);
-  int ones = decodeDigit(onesBits, false);
-
-  // One of the digits must be invalid, return -1
-  if (tens == -1 || ones == -1) {
-    return -1;
-  }
-
-  if (isTimer) {
-    // For the timer the number is a double between 0.0 and 9.9
-    return tens + (ones / 10.0);
-  } else {
-    // Non timer the number is an int between 00 and 99
-    return (tens * 10) + ones;
-  }
-}
-
-FanSpeeds decodeFanSpeed(uint8_t modeFanBits) {
-  // Fan bits are 0-3, mask out the rest
-  uint8_t fanBitsMasked = modeFanBits & 0b00001111;
-
-  if (acModel == V1_2) {
-    switch (fanBitsMasked) {
-      case 0x07:
-        return FAN_LOW;
-      case 0x0B:
-        return FAN_MEDIUM;
-      case 0x0D:
-        return FAN_HIGH;
-      case 0x0E:
-        return FAN_AUTO;
-      default:
-        return FAN_INVALID;
-    }
-  } else { // V1_4
-    /*char msg[10];
-    sprintf(msg, "%02x", fanBitsMasked);
-    Spark.publish("DECODE_FAN", msg);*/
-
-    switch (fanBitsMasked) {
-      case 0x07:
-        return FAN_LOW;
-      case 0x0B:
-        return FAN_HIGH;
-      case 0x0D:
-        return FAN_AUTO;
-      default:
-        return FAN_INVALID;
-    }
-  }
-}
-
-AcModes decodeAcMode(uint8_t modeFanBits) {
-  // Mode bits are 4-6, mask out the rest
-  uint8_t modeBitsMasked = modeFanBits & 0b01110000;
-
-  // Logic is the same for V1_2 & V1_4
-  switch (modeBitsMasked) {
-    case 0x60: // 0110 0000
-      return MODE_COOL;
-    case 0x50: // 0101 0000
-      return MODE_ECO;
-    case 0x30: // 0011 0000
-      return MODE_FAN;
-    default:
-      return MODE_INVALID;
+    case V1_2:
+      return &acParserV12;
+    case V1_4:
+      return &acParserV14;
+    case V1_8:
+      return &acParserV18;
   }
 }
 
