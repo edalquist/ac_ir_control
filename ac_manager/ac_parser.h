@@ -27,6 +27,7 @@ class AcParser {
     virtual double decodeDisplayNumber(uint8_t tensBits, uint8_t onesBits, bool isTimer);
     virtual FanSpeeds decodeFanSpeed(uint8_t modeFanBits) = 0;
     virtual AcModes decodeAcMode(uint8_t modeFanBits);
+    void updateStates(struct AcState* dest, int temp, double timer, enum FanSpeeds speed, enum AcModes mode, bool isSleep);
 };
 
 }

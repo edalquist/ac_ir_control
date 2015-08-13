@@ -3,6 +3,16 @@
 
 namespace AcManager {
 
+void AcParser::updateStates(struct AcState* dest, int temp, double timer, enum FanSpeeds speed, enum AcModes mode, bool isSleep) {
+  // Update the next index in the states array with the pushed data
+  dest->timestamp = Time.now();
+  dest->temp = temp;
+  dest->timer = timer;
+  dest->speed = speed;
+  dest->mode = mode;
+  dest->sleep = isSleep;
+}
+
 /**
  * Decode the number bits that control the 8 segment display
  */

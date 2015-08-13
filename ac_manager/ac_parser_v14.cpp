@@ -4,28 +4,28 @@
 
 namespace AcManager {
 
-bool AcParserV14::parseState(struct AcState* dest, uint8_t parseBuffer[], int pbLen) {
-/*
+// "PARSE_ERROR" -> config.parseErrorEventName
 
-  if (pbLen != getStatusLength()) {
-    Spark.publish(config.parseErrorEventName, "BAD LENGTH");
+bool AcParserV14::parseState(struct AcState* dest, uint8_t parseBuffer[], int pbLen) {
+  if (pbLen != getDataLength()) {
+    Spark.publish("PARSE_ERROR", "BAD LENGTH");
     // Something is wrong, skip parsing
     return false;
   }
 
-  // Ensure the first two bytes are the header
+  // Ensure header of "7F 7F"
   if (parseBuffer[0] != 0x7F || parseBuffer[1] != 0x7F) {
     return false;
   }
 
-  // If th next 4 bytes are 0xFF the unit is off
+  // If the next 4 bytes are 0xFF the unit is off
   bool isOff = true;
   for (int i = 2; i < pbLen && isOff; i++) {
     isOff = parseBuffer[i] == 0xFF;
   }
   if (isOff) {
-    updateStates(0, 0, FAN_OFF, MODE_OFF, false);
-    return false;
+    updateStates(dest, 0, 0, FAN_OFF, MODE_OFF, false);
+    return true;
   }
 
   // All valid buffers have the FD for the last byte
@@ -41,7 +41,7 @@ bool AcParserV14::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
     // Display digits were invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID DISPLAY: %02x %02x", parseBuffer[2], parseBuffer[3]);
-    Spark.publish(config.parseErrorEventName, msg);
+    Spark.publish("PARSE_ERROR", msg);
     return false;
   }
 
@@ -50,7 +50,7 @@ bool AcParserV14::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
     // AC Mode was invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID MODE: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
+    Spark.publish("PARSE_ERROR", msg);
     return false;
   }
 
@@ -59,19 +59,17 @@ bool AcParserV14::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
     // Fan Speed was invalid, ignore buffer
     char msg[20];
     sprintf(msg, "INVALID FAN: %02x", parseBuffer[4]);
-    Spark.publish(config.parseErrorEventName, msg);
+    Spark.publish("PARSE_ERROR", msg);
     return false;
   }
 
   if (isTimer) {
-    updateStates(0, display, fanSpeed, acMode, false);
+    updateStates(dest, 0, display, fanSpeed, acMode, false);
   } else {
-    updateStates((int) display, 0, fanSpeed, acMode, false);
+    updateStates(dest, (int) display, 0, fanSpeed, acMode, false);
   }
 
   return true;
-*/
-  return false;
 }
 
 

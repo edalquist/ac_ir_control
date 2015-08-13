@@ -13,25 +13,19 @@ bool AcParserV12::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
     return false;
   }
 
-  // If all 5 bytes are 0xFF the unit is off
+  // Ensure header of "FF"
+  if (parseBuffer[0] != 0xFF) {
+    return false;
+  }
+
+  // If the next 4 bytes are 0xFF the unit is off
   bool isOff = true;
-  for (int i = 0; i < pbLen && isOff; i++) {
+  for (int i = 1; i < pbLen && isOff; i++) {
     isOff = parseBuffer[i] == 0xFF;
   }
   if (isOff) {
-    // Update the AcState
-    dest->temp = 0;
-    dest->timer = 0;
-    dest->speed = FAN_OFF;
-    dest->mode = MODE_OFF;
-    dest->sleep = false;
-
+    updateStates(dest, 0, 0, FAN_OFF, MODE_OFF, false);
     return true;
-  }
-
-  // All valid buffers have the FF for the first byte
-  if (parseBuffer[0] != 0xFF) {
-    return false;
   }
 
   // If bit 5 of byte 3 is false timer is on
@@ -52,7 +46,7 @@ bool AcParserV12::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
       return false;
   }
 
-  // If bit 5 of byte 3 is false timer is on
+  // If bit 5 of byte 3 is false sleep is on
   bool isSleep;
   uint8_t sleepMasked = parseBuffer[3] & 0b00001111;
   switch (sleepMasked) {
@@ -97,17 +91,11 @@ bool AcParserV12::parseState(struct AcState* dest, uint8_t parseBuffer[], int pb
     return false;
   }
 
-  // Update the AcState
   if (isTimer) {
-    dest->temp = 0;
-    dest->timer = display;
+    updateStates(dest, 0, display, fanSpeed, acMode, false);
   } else {
-    dest->temp = (int) display;
-    dest->timer = 0;
+    updateStates(dest, (int) display, 0, fanSpeed, acMode, false);
   }
-  dest->speed = fanSpeed;
-  dest->mode = acMode;
-  dest->sleep = isSleep;
 
   return true;
 }
