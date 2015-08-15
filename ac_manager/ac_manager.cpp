@@ -57,6 +57,11 @@ int setState(String command) {
     speed = FAN_OFF;
   } else if (command == "ON") {
     toggleOn = true;
+
+    // Ignored but set to surpress compiler warnings
+    temp = 72;
+    mode = MODE_ECO;
+    speed = FAN_AUTO;
   } else {
     int firstComma = command.indexOf(",");
     if (firstComma == -1) {
